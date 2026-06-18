@@ -17,6 +17,6 @@ RUN npm install -g pnpm && pnpm install --prod
 
 COPY . .
 
-EXPOSE 3000
+EXPOSE 36000
 
 CMD ["node", "server.js"]
