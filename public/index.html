@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Generador de Infografías</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-[#1f2937] text-white font-['Montserrat',sans-serif] min-h-screen flex items-center justify-center p-6">
+    <div class="max-w-2xl w-full bg-[#111827] rounded-2xl p-8 shadow-2xl border border-gray-800">
+        <h1 class="text-3xl font-bold text-center text-[#019cde] mb-2">Generador de Infografías</h1>
+        <p class="text-gray-400 text-center text-sm mb-8">Sube tu archivo datos.csv para generar los formatos PNG y PDF automáticamente.</p>
+        
+        <form id="uploadForm" class="space-y-6">
+            <div class="border-2 border-dashed border-gray-700 rounded-xl p-8 text-center hover:border-[#019cde] transition-colors relative bg-[#1f2937]/50">
+                <input type="file" id="csvFile" name="csvFile" accept=".csv" class="absolute inset-0 w-full h-full opacity-0 cursor-pointer" required>
+                <svg class="w-12 h-12 text-gray-500 mx-auto mb-4" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z"/>
+                </svg>
+                <span id="fileName" class="text-sm text-gray-400 block font-medium">Selecciona o arrastra tu archivo CSV</span>
+            </div>
+            <button type="submit" class="w-full py-3 bg-[#019cde] hover:bg-[#0086c2] text-white font-bold rounded-xl shadow-lg transition-colors flex items-center justify-center gap-3">
+                Generar Lote
+            </button>
+        </form>
+
+        <div id="loading" class="hidden mt-8 text-center space-y-3">
+            <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-[#019cde] mx-auto"></div>
+            <p class="text-sm text-gray-400">Instanciando navegador headless y renderizando elementos...</p>
+        </div>
+
+        <div id="results" class="hidden mt-8 space-y-4">
+            <h2 class="text-xl font-bold text-gray-200 border-b border-gray-800 pb-2">Archivos Generados</h2>
+            <div id="filesList" class="space-y-3"></div>
+        </div>
+    </div>
+
+    <script>
+        const csvInput = document.getElementById('csvFile');
+        const fileNameSpan = document.getElementById('fileName');
+        const form = document.getElementById('uploadForm');
+        const loading = document.getElementById('loading');
+        const results = document.getElementById('results');
+        const filesList = document.getElementById('filesList');
+
+        csvInput.addEventListener('change', (e) => {
+            if(e.target.files.length > 0) {
+                fileNameSpan.textContent = e.target.files[0].name;
+                fileNameSpan.classList.remove('text-gray-400');
+                fileNameSpan.classList.add('text-[#019cde]');
+            }
+        });
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+            filesList.innerHTML = '';
+
+            const formData = new FormData();
+            formData.append('csvFile', csvInput.files[0]);
+
+            try {
+                const response = await fetch('/upload', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await response.json();
+
+                loading.classList.add('hidden');
+
+                if (data.success) {
+                    results.classList.remove('hidden');
+                    data.files.forEach(file => {
+                        const item = document.createElement('div');
+                        item.className = 'flex items-center justify-between p-4 bg-[#1f2937] rounded-xl border border-gray-800';
+                        item.innerHTML = `
+                            <span class="font-semibold text-sm text-gray-300 uppercase tracking-wide">${file.servicio}</span>
+                            <div class="flex gap-2">
+                                <a href="${file.png}" download class="px-3 py-1.5 bg-gray-800 hover:bg-gray-700 text-xs font-bold rounded-lg border border-gray-700 transition-colors">PNG</a>
+                                <a href="${file.pdf}" download class="px-3 py-1.5 bg-[#019cde] hover:bg-[#0086c2] text-xs font-bold rounded-lg transition-colors">PDF</a>
+                            </div>
+                        `;
+                        filesList.appendChild(item);
+                    });
+                } else {
+                    alert('Error al generar: ' + data.error);
+                }
+            } catch (error) {
+                loading.classList.add('hidden');
+                alert('Error de red al conectar con el servidor.');
+            }
+        });
+    </script>
+</body>
+</html>
