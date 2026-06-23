@@ -1,15 +1,15 @@
+version: '3.8'
+
 services:
   infografias-app:
     build: .
-    container_name: infografias-service
-    restart: unless-stopped
+    container_name: infografias_server
     ports:
       - "36000:36000"
     volumes:
-      - infografias_data:/app/public/infografias
+      - .:/app
+      - /app/node_modules
+    shm_size: '2gb'
     environment:
-      - NODE_ENV=production
+      - NODE_ENV=development
       - PUPPETEER_EXECUTABLE_PATH=/usr/bin/chromium
-
-volumes:
-  infografias_data:
