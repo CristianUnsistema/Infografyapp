@@ -26,27 +26,46 @@ app.use(express.static('public'));
 
 function getBase64Image(filePath, originalName = '') {
   const imgData = fs.readFileSync(filePath);
-  const ext = originalName ? path.extname(originalName).substring(1) : (path.extname(filePath).substring(1) || 'png');
+  let ext = originalName ? path.extname(originalName).substring(1) : (path.extname(filePath).substring(1) || 'png');
+  
+  // Estandarizar la extensión jpg a jpeg para el MIME type
+  if (ext.toLowerCase() === 'jpg') ext = 'jpeg';
+  
   return `data:image/${ext};base64,${imgData.toString('base64')}`;
 }
 
 function resolveImage(imgPath, dir, uploadedImages = []) {
   if (!imgPath) return '';
-  if (imgPath.startsWith('http')) {
-    return imgPath;
+  
+  // Limpiar espacios en blanco que suelen colarse en los archivos CSV
+  const cleanPath = imgPath.trim();
+
+  if (cleanPath.startsWith('http')) {
+    return cleanPath;
   }
   
+  // Buscar la imagen entre las que el usuario subió
   if (uploadedImages.length > 0) {
-    const foundImage = uploadedImages.find(img => img.originalname === imgPath);
+    const foundImage = uploadedImages.find(img => 
+      // Comparamos ignorando espacios extra y diferencias de mayúsculas/minúsculas
+      img.originalname.trim().toLowerCase() === cleanPath.toLowerCase()
+    );
+    
     if (foundImage) {
       return getBase64Image(foundImage.path, foundImage.originalname);
     }
   }
 
-  if (imgPath.startsWith('.')) {
-    return getBase64Image(path.resolve(dir, imgPath));
+  // Si la ruta es local (empieza con punto)
+  if (cleanPath.startsWith('.')) {
+    const localPath = path.resolve(dir, cleanPath);
+    if (fs.existsSync(localPath)) {
+        return getBase64Image(localPath);
+    }
   }
-  return imgPath;
+  
+  // Si no se encontró ni localmente ni en los uploads, devuelve el texto original
+  return cleanPath;
 }
 
 const logoBase64 = getBase64Image(path.resolve(__dirname, 'logo.png'));
@@ -109,12 +128,13 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
             bot_t5 = '', bot_d5 = '', bot_t6 = '', bot_d6 = ''
           } = resultados[i];
           
+          // RESOLUCIÓN DINÁMICA DE IMÁGENES
           const srcImagen = resolveImage(imagen, __dirname, uploadedImages);
           const srcImgCaja1 = resolveImage(img_caja1, __dirname, uploadedImages);
           const srcImgCaja2 = resolveImage(img_caja2, __dirname, uploadedImages);
 
           let templateHTML = '';
-          const tipoLower = tipo.toLowerCase();
+          const tipoLower = tipo.trim().toLowerCase();
 
           if (tipoLower === 'producto') {
             templateHTML = `
@@ -143,12 +163,16 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                       </defs>
                   </svg>
                   <div class="a4-canvas flex flex-col box-border overflow-hidden relative">
-                      <header class="flex justify-between items-center px-12 py-6 shrink-0 z-30 bg-white relative">
+                        <header class="flex justify-between items-center px-12 py-6 shrink-0 z-30 bg-white relative">
                           <img src="${logoBase64}" alt="Logo" class="w-[240px] h-auto">
-                          <div class="text-right border-r-2 border-[#019cde] pr-4">
-                              <span class="block text-[#019cde] font-extrabold text-[12px] tracking-widest">PRODUCT SHOWCASE</span>
-                              <span class="block text-gray-400 text-[8px] font-bold tracking-wider uppercase">${titulo2} ${titulo3}</span>
-                          </div>
+                          <nav class="border-l-2 border-[#019cde] pl-4 flex items-center">
+                              <ul class="list-none p-0 m-0 flex flex-col gap-1">
+                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">TECNOLOGÍA</li>
+                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">SEGURIDAD</li>
+                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">CONFIANZA</li>
+                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">RESULTADOS</li>
+                              </ul>
+                          </nav>
                       </header>
                       <main class="flex-1 w-full flex flex-col relative z-10">
                           <div class="relative w-full h-[40%] flex shrink-0 bg-gray-50 border-b border-gray-100">
@@ -271,195 +295,6 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                               </div>
                           </div>
                       </main>
-                      <footer class="bg-[#111827] text-white flex justify-between items-center px-10 h-[85px] w-full box-border shrink-0 break-inside-avoid relative z-30 border-t-2 border-[#019cde]">
-                          <div class="flex items-center gap-3 flex-1">
-                              <div class="flex flex-col justify-center">
-                                  <span class="font-bold text-[9px] tracking-[0.5px] leading-tight text-[#019cde]">UNSISTEMA.</span>
-                                  <span class="font-bold text-[9px] tracking-[0.5px] leading-tight text-white">SOPORTE E INFRAESTRUCTURA</span>
-                                  <p class="m-0 text-[8px] leading-[1.2] font-light text-gray-400 mt-0.5">Soluciones robustas y eficientes</p>
-                              </div>
-                          </div>
-                          <div class="h-9 w-[1px] bg-gray-800 mx-3 flex-shrink-0"></div>
-                          <div class="flex flex-col items-center justify-center flex-1 pl-1 gap-1.5">
-                              <img src="${logoFooterBase64}" alt="Logo Footer" class="w-[145px] h-auto brightness-0 invert">
-                          </div>
-                      </footer>
-                  </div>
-              </body>
-              </html>
-            `;
-          } else if (tipoLower === 'instalacion' || tipoLower === 'instalación') {
-            templateHTML = `
-              <!DOCTYPE html>
-              <html lang="es">
-              <head>
-                  <meta charset="UTF-8">
-                  <script src="https://cdn.tailwindcss.com"></script>
-                  <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;700;800&display=swap" rel="stylesheet">
-                  <style>
-                      @page { margin: 0; size: 794px 1123px; }
-                      html, body { 
-                          margin: 0 !important; padding: 0 !important; width: 794px; height: 1123px; overflow: hidden; background-color: white; 
-                          -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
-                      }
-                      .a4-canvas { width: 100%; height: 100%; position: relative; }
-                      @media print { html, body, .a4-canvas { width: 794px !important; height: 1123px !important; page-break-inside: avoid; } }
-                  </style>
-              </head>
-              <body class="font-['Montserrat',sans-serif]">
-                  <div class="a4-canvas flex flex-col box-border overflow-hidden relative">
-                      <header class="flex justify-between items-center px-12 py-6 shrink-0 z-30 bg-white relative border-b-4 border-[#019cde]">
-                          <img src="${logoBase64}" alt="Logo" class="w-[240px] h-auto">
-                          <nav class="border-l-2 border-[#019cde] pl-4 flex items-center">
-                              <ul class="list-none p-0 m-0 flex flex-col gap-1">
-                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">TECNOLOGÍA</li>
-                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">SEGURIDAD</li>
-                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">CONFIANZA</li>
-                                  <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">RESULTADOS</li>
-                              </ul>
-                          </nav>
-                      </header>
-                      <main class="flex-1 w-full flex flex-col relative z-10 bg-gray-100">
-                          <div class="relative w-full h-[47%] flex shrink-0 bg-[#0f172a]">
-                              <div class="w-[50%] pl-12 pr-4 pt-6 flex flex-col justify-start z-20 relative">
-                                  <h1 class="font-bold leading-[1.05] m-0">
-                                      <span class="block text-gray-400 text-[26px] tracking-widest uppercase">${titulo1}</span>
-                                      <span class="block text-[#019cde] text-[65px] tracking-tight uppercase">${titulo2}</span>
-                                      <span class="block text-white text-[36px] tracking-tight uppercase">${titulo3}</span>
-                                  </h1>
-                                  <div class="w-12 h-[2px] bg-[#019cde] my-4"></div>
-                                  <p class="text-gray-300 font-bold tracking-widest text-[9px] mb-3 uppercase">${hero_subtitle}</p>
-                                  <p class="text-gray-400 text-[13px] leading-relaxed mb-4 max-w-[95%]">${hero_desc}</p>
-                                  <p class="text-[#019cde] font-bold text-[13px] mb-5">${hero_highlight}</p>
-                                  <div class="flex flex-col items-start gap-2">
-                                      <div class="flex items-center gap-2 border border-gray-600 bg-gray-800/50 rounded-sm px-4 py-1.5">
-                                          <span class="text-white font-bold text-xl leading-none tracking-tight">${hero_pill_t1}</span>
-                                          <div class="w-[1px] h-6 bg-gray-600"></div>
-                                          <div class="flex flex-col justify-center">
-                                              <span class="text-gray-300 text-[8px] font-bold leading-tight uppercase">${hero_pill_t2}</span>
-                                              <span class="text-[#019cde] text-[8px] font-bold leading-tight uppercase">${hero_pill_t3}</span>
-                                          </div>
-                                      </div>
-                                      <div class="bg-[#019cde] text-white text-[9px] font-bold px-3 py-1 rounded-sm uppercase tracking-wider">${hero_badge}</div>
-                                  </div>
-                              </div>
-                              <div class="absolute top-0 right-0 w-[60%] h-full z-0">
-                                  <div class="absolute inset-0 bg-gradient-to-r from-[#0f172a] from-5% via-[#0f172a]/70 via-30% to-transparent to-70% z-10"></div>
-                                  <div class="absolute inset-0 bg-[#019cde]/10 z-10 mix-blend-color"></div>
-                                  <img src="${srcImagen}" alt="Background" class="w-full h-full object-cover grayscale-[30%]">
-                              </div>
-                          </div>
-                          <div class="flex-1 w-full relative z-20 flex flex-col justify-between py-4 border-t border-gray-300">
-                              <div class="px-8">
-                                  <h2 class="text-center text-[#005a8c] font-black text-[12px] mb-4 tracking-wider uppercase">${sec1_titulo}</h2>
-                                  <div class="grid grid-cols-7 gap-3 text-center">
-                                      <div class="flex flex-col items-center bg-white p-2 border border-gray-200 shadow-sm">
-                                          <svg class="w-6 h-6 text-[#005a8c] mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-                                          <h3 class="text-[#005a8c] font-bold text-[7px] uppercase tracking-wide leading-tight mb-1">${caja1_t1}</h3>
-                                          <p class="text-[#444] text-[6px] leading-tight font-medium">${caja1_d1}</p>
-                                      </div>
-                                      <div class="flex flex-col items-center bg-white p-2 border border-gray-200 shadow-sm">
-                                          <svg class="w-6 h-6 text-[#005a8c] mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M2.25 15a4.5 4.5 0 004.5 4.5H18a3.75 3.75 0 001.332-7.257 3 3 0 00-3.758-3.848 5.25 5.25 0 00-10.233 2.33A4.502 4.502 0 002.25 15z"></path></svg>
-                                          <h3 class="text-[#005a8c] font-bold text-[7px] uppercase tracking-wide leading-tight mb-1">${caja1_t2}</h3>
-                                          <p class="text-[#444] text-[6px] leading-tight font-medium">${caja1_d2}</p>
-                                      </div>
-                                      <div class="flex flex-col items-center bg-white p-2 border border-gray-200 shadow-sm">
-                                          <svg class="w-6 h-6 text-[#005a8c] mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75"></path></svg>
-                                          <h3 class="text-[#005a8c] font-bold text-[7px] uppercase tracking-wide leading-tight mb-1">${caja1_t3}</h3>
-                                          <p class="text-[#444] text-[6px] leading-tight font-medium">${caja1_d3}</p>
-                                      </div>
-                                      <div class="flex flex-col items-center bg-white p-2 border border-gray-200 shadow-sm">
-                                          <svg class="w-6 h-6 text-[#005a8c] mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5.25 14.25h13.5m-13.5 0a3 3 0 01-3-3m3 3a3 3 0 100 6h13.5a3 3 0 100-6m-16.5-3a3 3 0 013-3h13.5a3 3 0 013 3m-19.5 0a4.5 4.5 0 01.9-2.7L5.737 5.1a3.375 3.375 0 012.7-1.35h7.126c1.062 0 2.062.5 2.7 1.35l2.587 3.45a4.5 4.5 0 01.9 2.7m0 0a3 3 0 01-3 3m0 3h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008zm-3 6h.008v.008h-.008v-.008zm0-6h.008v.008h-.008v-.008z"></path></svg>
-                                          <h3 class="text-[#005a8c] font-bold text-[7px] uppercase tracking-wide leading-tight mb-1">${caja1_t4}</h3>
-                                          <p class="text-[#444] text-[6px] leading-tight font-medium">${caja1_d4}</p>
-                                      </div>
-                                      <div class="flex flex-col items-center bg-white p-2 border border-gray-200 shadow-sm">
-                                          <svg class="w-6 h-6 text-[#005a8c] mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 18.75h3"></path></svg>
-                                          <h3 class="text-[#005a8c] font-bold text-[7px] uppercase tracking-wide leading-tight mb-1">${caja1_t5}</h3>
-                                          <p class="text-[#444] text-[6px] leading-tight font-medium">${caja1_d5}</p>
-                                      </div>
-                                      <div class="flex flex-col items-center bg-white p-2 border border-gray-200 shadow-sm">
-                                          <svg class="w-6 h-6 text-[#005a8c] mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"></path></svg>
-                                          <h3 class="text-[#005a8c] font-bold text-[7px] uppercase tracking-wide leading-tight mb-1">${caja1_t6}</h3>
-                                          <p class="text-[#444] text-[6px] leading-tight font-medium">${caja1_d6}</p>
-                                      </div>
-                                      <div class="flex flex-col items-center bg-white p-2 border border-gray-200 shadow-sm">
-                                          <svg class="w-6 h-6 text-[#005a8c] mb-2" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z"></path></svg>
-                                          <h3 class="text-[#005a8c] font-bold text-[7px] uppercase tracking-wide leading-tight mb-1">${caja1_t7}</h3>
-                                          <p class="text-[#444] text-[6px] leading-tight font-medium">${caja1_d7}</p>
-                                      </div>
-                                  </div>
-                              </div>
-                              <div class="px-8 flex items-stretch justify-between gap-4 min-h-[145px]">
-                                  <div class="flex-1 bg-white shadow-sm border border-gray-200 flex relative overflow-hidden group">
-                                      <div class="w-[35%] relative z-0">
-                                          <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-white z-10"></div>
-                                          <img src="${srcImgCaja1}" class="w-full h-full object-cover grayscale-[50%]">
-                                      </div>
-                                      <div class="w-[65%] p-3 pl-2 z-20 flex flex-col justify-center bg-white relative">
-                                          <div class="absolute top-3 bottom-3 left-0 w-1 bg-[#ff3b3b] rounded-full"></div>
-                                          <h3 class="text-[#ff3b3b] font-black text-[9px] mb-2 uppercase tracking-widest ml-2">${sec2_titulo}</h3>
-                                          <ul class="flex flex-col gap-1.5 ml-2">
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#ff3b3b] shrink-0 mt-[1px]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"></path></svg><span class="text-gray-600 text-[6.5px] font-medium leading-tight">${c2_t1}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#ff3b3b] shrink-0 mt-[1px]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"></path></svg><span class="text-gray-600 text-[6.5px] font-medium leading-tight">${c2_t2}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#ff3b3b] shrink-0 mt-[1px]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"></path></svg><span class="text-gray-600 text-[6.5px] font-medium leading-tight">${c2_t3}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#ff3b3b] shrink-0 mt-[1px]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"></path></svg><span class="text-gray-600 text-[6.5px] font-medium leading-tight">${c2_t4}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#ff3b3b] shrink-0 mt-[1px]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"></path></svg><span class="text-gray-600 text-[6.5px] font-medium leading-tight">${c2_t5}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#ff3b3b] shrink-0 mt-[1px]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"></path></svg><span class="text-gray-600 text-[6.5px] font-medium leading-tight">${c2_t6}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#ff3b3b] shrink-0 mt-[1px]" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM8.28 7.22a.75.75 0 00-1.06 1.06L8.94 10l-1.72 1.72a.75.75 0 101.06 1.06L10 11.06l1.72 1.72a.75.75 0 101.06-1.06L11.06 10l1.72-1.72a.75.75 0 00-1.06-1.06L10 8.94 8.28 7.22z" clip-rule="evenodd"></path></svg><span class="text-gray-600 text-[6.5px] font-medium leading-tight">${c2_t7}</span></li>
-                                          </ul>
-                                      </div>
-                                  </div>
-                                  <div class="flex-1 bg-[#0f172a] shadow-sm border border-gray-800 flex relative overflow-hidden group">
-                                      <div class="w-[35%] relative z-0">
-                                          <div class="absolute inset-0 bg-gradient-to-r from-transparent via-[#0f172a]/70 to-[#0f172a] z-10"></div>
-                                          <img src="${srcImgCaja2}" class="w-full h-full object-cover opacity-60 mix-blend-luminosity">
-                                      </div>
-                                      <div class="w-[65%] p-3 pl-2 z-20 flex flex-col justify-center bg-[#0f172a] relative">
-                                          <div class="absolute top-3 bottom-3 left-0 w-1 bg-[#019cde] rounded-full"></div>
-                                          <h3 class="text-white font-black text-[9px] mb-2 uppercase tracking-widest ml-2">${sec3_titulo}</h3>
-                                          <ul class="flex flex-col gap-1.5 ml-2">
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#41aef2] shrink-0 mt-[1px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-300 text-[6.5px] font-medium leading-tight">${c3_t1}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#41aef2] shrink-0 mt-[1px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-300 text-[6.5px] font-medium leading-tight">${c3_t2}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#41aef2] shrink-0 mt-[1px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-300 text-[6.5px] font-medium leading-tight">${c3_t3}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#41aef2] shrink-0 mt-[1px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-300 text-[6.5px] font-medium leading-tight">${c3_t4}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#41aef2] shrink-0 mt-[1px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-300 text-[6.5px] font-medium leading-tight">${c3_t5}</span></li>
-                                              <li class="flex items-start gap-1.5"><svg class="w-2.5 h-2.5 text-[#41aef2] shrink-0 mt-[1px]" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"></path></svg><span class="text-gray-300 text-[6.5px] font-medium leading-tight">${c3_t6}</span></li>
-                                          </ul>
-                                      </div>
-                                  </div>
-                              </div>
-                              <div class="px-8 mt-2">
-                                  <h2 class="text-center text-gray-800 font-extrabold text-[12px] mb-3 tracking-wider uppercase">${sec4_titulo}</h2>
-                                  <div class="grid grid-cols-6 gap-2">
-                                      <div class="p-2 bg-white border-t-2 border-[#019cde] shadow-sm text-center flex flex-col justify-start h-full">
-                                          <h4 class="text-[#005a8c] font-black text-[7px] uppercase tracking-wide mb-1">${bot_t1}</h4>
-                                          <p class="text-gray-500 text-[6px] leading-tight font-medium">${bot_d1}</p>
-                                      </div>
-                                      <div class="p-2 bg-white border-t-2 border-[#019cde] shadow-sm text-center flex flex-col justify-start h-full">
-                                          <h4 class="text-[#005a8c] font-black text-[7px] uppercase tracking-wide mb-1">${bot_t2}</h4>
-                                          <p class="text-gray-500 text-[6px] leading-tight font-medium">${bot_d2}</p>
-                                      </div>
-                                      <div class="p-2 bg-white border-t-2 border-[#019cde] shadow-sm text-center flex flex-col justify-start h-full">
-                                          <h4 class="text-[#005a8c] font-black text-[7px] uppercase tracking-wide mb-1">${bot_t3}</h4>
-                                          <p class="text-gray-500 text-[6px] leading-tight font-medium">${bot_d3}</p>
-                                      </div>
-                                      <div class="p-2 bg-white border-t-2 border-[#019cde] shadow-sm text-center flex flex-col justify-start h-full">
-                                          <h4 class="text-[#005a8c] font-black text-[7px] uppercase tracking-wide mb-1">${bot_t4}</h4>
-                                          <p class="text-gray-500 text-[6px] leading-tight font-medium">${bot_d4}</p>
-                                      </div>
-                                      <div class="p-2 bg-white border-t-2 border-[#019cde] shadow-sm text-center flex flex-col justify-start h-full">
-                                          <h4 class="text-[#005a8c] font-black text-[7px] uppercase tracking-wide mb-1">${bot_t5}</h4>
-                                          <p class="text-gray-500 text-[6px] leading-tight font-medium">${bot_d5}</p>
-                                      </div>
-                                      <div class="p-2 bg-white border-t-2 border-[#019cde] shadow-sm text-center flex flex-col justify-start h-full">
-                                          <h4 class="text-[#005a8c] font-black text-[7px] uppercase tracking-wide mb-1">${bot_t6}</h4>
-                                          <p class="text-gray-500 text-[6px] leading-tight font-medium">${bot_d6}</p>
-                                      </div>
-                                  </div>
-                              </div>
-                          </div>
-                      </main>
                       <footer class="bg-[#019cde] text-white flex justify-between items-center px-10 h-[85px] w-full box-border shrink-0 break-inside-avoid relative z-30">
                           <div class="flex items-center gap-3 flex-1">
                               <svg class="w-9 h-9 text-white flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
@@ -480,7 +315,7 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                           </div>
                           <div class="h-9 w-[1px] bg-white/40 mx-3 flex-shrink-0"></div>
                           <div class="flex flex-col items-center justify-center flex-1 pl-1 gap-1.5">
-                              <img src="${logoFooterBase64}" alt="Logo Footer" class="w-[145px] h-auto">
+                              <img src="${logoFooterBase64}" alt="Logo Footer" class="w-[145px] h-auto brightness-0 invert">
                               <div class="flex items-center gap-1 text-[7.5px] font-medium tracking-[0.3px] text-white">
                                   <span>TECNOLOGÍA</span>
                                   <span class="text-white/40 font-light text-[6px]">|</span>
@@ -495,6 +330,147 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                   </div>
               </body>
               </html>
+            `;
+          } else if (tipoLower === 'instalacion' || tipoLower === 'instalación') {
+            templateHTML = `
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        @page { margin: 0; size: 794px 1123px; }
+        html, body { 
+            margin: 0 !important; padding: 0 !important; width: 794px; height: 1123px; overflow: hidden; background-color: white; 
+            -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important;
+        }
+        .a4-canvas { width: 794px; height: 1123px; position: relative; box-sizing: border-box; }
+        @media print { html, body, .a4-canvas { width: 794px !important; height: 1123px !important; page-break-inside: avoid; } }
+    </style>
+</head>
+<body class="font-['Montserrat',sans-serif]">
+    <div class="a4-canvas overflow-hidden relative">
+        
+        <header class="absolute top-0 left-0 w-full h-[100px] flex justify-between items-center px-12 z-30 bg-white border-b-4 border-[#019cde]">
+            <img src="${logoBase64}" alt="Logo" class="w-[240px] h-auto">
+            <nav class="border-l-2 border-[#019cde] pl-4 flex items-center">
+                <ul class="list-none p-0 m-0 flex flex-col gap-1">
+                    <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">TECNOLOGÍA</li>
+                    <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">SEGURIDAD</li>
+                    <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">CONFIANZA</li>
+                    <li class="text-[#555] font-bold text-[10px] tracking-[1.5px] leading-tight">RESULTADOS</li>
+                </ul>
+            </nav>
+        </header>
+
+        <main class="absolute top-[100px] bottom-[85px] left-0 w-full bg-white z-10 overflow-hidden">
+            
+            <div class="absolute inset-0 -z-10">
+                <div class="absolute inset-0 bg-white/20 z-10"></div>
+                <img src="${srcImagen}" alt="Diagrama" class="w-full h-full object-cover">
+            </div>
+
+
+            <div class="absolute top-10 left-12 w-[55%] z-20 bg-white/80 p-6 rounded-xl backdrop-blur-sm shadow-sm border border-white/50">
+                <h1 class="font-black leading-[1.05] m-0 mb-8">
+                    <span class="block text-[#111827] text-[34px] tracking-tight uppercase">${titulo1}</span>
+                    <span class="block text-[#111827] text-[48px] tracking-tighter uppercase">${titulo2}</span>
+                    <span class="block text-[#019cde] text-[40px] tracking-tight uppercase">${titulo3}</span>
+                </h1>
+                
+                <h2 class="text-[#111827] font-medium text-[16px] leading-tight uppercase mb-1">
+                    <span class="block">${hero_subtitle}</span>
+                    <span class="block text-[#019cde]">${hero_highlight}</span>
+                </h2>
+                
+                <p class="text-gray-800 text-[12px] leading-relaxed max-w-[90%] mt-4 font-semibold">
+                    ${hero_desc}
+                </p>
+            </div>
+
+            <div class="absolute bottom-10 left-12 bg-white rounded-2xl shadow-[0_8px_30px_rgba(0,0,0,0.12)] p-6 z-20 flex gap-6 border border-gray-200 w-[42%]">
+                <div class="flex-1">
+                    <div class="bg-[#e6f5fc] text-[#019cde] text-[9px] font-bold px-3 py-1 rounded w-max mb-4 uppercase tracking-wider">
+                        INCLUYE
+                    </div>
+                    <ul class="flex flex-col gap-2.5">
+                        <li class="flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-[#019cde] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-gray-800 text-[9px] font-semibold">${caja1_d1}</span>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-[#019cde] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-gray-800 text-[9px] font-semibold">${caja1_d2}</span>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-[#019cde] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-gray-800 text-[9px] font-semibold">${caja1_d3}</span>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-[#019cde] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-gray-800 text-[9px] font-semibold">${caja1_d4}</span>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-[#019cde] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-gray-800 text-[9px] font-semibold">${caja1_d5}</span>
+                        </li>
+                        <li class="flex items-center gap-2">
+                            <svg class="w-3.5 h-3.5 text-[#019cde] shrink-0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span class="text-gray-800 text-[9px] font-semibold">${caja1_d6}</span>
+                        </li>
+                    </ul>
+                </div>
+                <div class="w-[1px] bg-gray-200"></div>
+                <div class="flex items-center justify-center pr-2">
+                    <svg class="w-12 h-12 text-[#019cde]" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
+                </div>
+            </div>
+
+            <div class="absolute bottom-16 right-10 w-[42%] z-20 flex gap-2 items-start bg-white/90 p-4 rounded-xl border border-white">
+                <span class="text-[#019cde] font-serif text-[42px] leading-[0.6] pt-3">"</span>
+                <p class="text-[#333] text-[12px] font-bold leading-relaxed pt-2">
+                    ${bot_d1}
+                </p>
+                <span class="text-[#019cde] font-serif text-[42px] leading-[0.6] pt-3 self-end rotate-180">"</span>
+            </div>
+        </main>
+
+        <footer class="absolute bottom-0 left-0 h-[85px] w-full bg-[#019cde] text-white flex justify-between items-center px-10 box-border z-30 break-inside-avoid">
+            <div class="flex items-center gap-3 flex-1">
+                <svg class="w-9 h-9 text-white flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path></svg>
+                <div class="flex flex-col justify-center">
+                    <span class="font-bold text-[9px] tracking-[0.5px] leading-tight">UNSISTEMA.</span>
+                    <span class="font-bold text-[9px] tracking-[0.5px] leading-tight">TU ALIADO TECNOLÓGICO.</span>
+                    <p class="m-0 text-[8px] leading-[1.2] font-light text-white mt-0.5">Soluciones confiables para personas<br>y empresas que buscan más</p>
+                </div>
+            </div>
+            <div class="h-9 w-[1px] bg-white/40 mx-3 flex-shrink-0"></div>
+            <div class="flex items-center gap-3 flex-1 pl-1">
+                <svg class="w-8 h-8 text-white flex-shrink-0" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path><path stroke-linecap="round" stroke-linejoin="round" d="M9 11l2 2 4-4"></path></svg>
+                <div class="flex flex-col justify-center">
+                    <span class="font-bold text-[9px] tracking-[0.5px] leading-tight">TECNOLOGÍA QUE IMPULSA.</span>
+                    <span class="font-bold text-[9px] tracking-[0.5px] leading-tight">SOLUCIONES QUE RESPALDAN.</span>
+                    <p class="m-0 text-[8px] leading-[1.2] font-light text-white mt-0.5">Herramientas potentes y sencillas<br>para retos complejos</p>
+                </div>
+            </div>
+            <div class="h-9 w-[1px] bg-white/40 mx-3 flex-shrink-0"></div>
+            <div class="flex flex-col items-center justify-center flex-1 pl-1 gap-1.5">
+                <img src="${logoFooterBase64}" alt="Logo Footer" class="w-[145px] h-auto brightness-0 invert">
+                <div class="flex items-center gap-1 text-[7.5px] font-medium tracking-[0.3px] text-white">
+                    <span>TECNOLOGÍA</span>
+                    <span class="text-white/40 font-light text-[6px]">|</span>
+                    <span>SEGURIDAD</span>
+                    <span class="text-white/40 font-light text-[6px]">|</span>
+                    <span>CONFIANZA</span>
+                    <span class="text-white/40 font-light text-[6px]">|</span>
+                    <span>RESULTADOS</span>
+                </div>
+            </div>
+        </footer>
+    </div>
+</body>
+</html>
             `;
           } else {
             templateHTML = `
@@ -539,7 +515,7 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                               <div class="w-[50%] pl-12 pr-4 pt-4 flex flex-col justify-start z-20 relative">
                                   <h1 class="font-bold leading-[1.05] m-0">
                                       <span class="block text-[#444] text-[34px] tracking-tight">${titulo1}</span>
-                                      <span class="block text-[#019cde] text-[65px] tracking-tight">${titulo2}</span>
+                                      <span class="block text-[#019cde] text-[50px] tracking-tight">${titulo2}</span>
                                       <span class="block text-[#019cde] text-[36px] tracking-tight">${titulo3}</span>
                                   </h1>
                                   <div class="w-8 h-[1px] bg-[#019cde] my-4"></div>
@@ -634,7 +610,6 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                                               <li class="flex items-center gap-1.5"><svg class="w-3 h-3 text-[#005f8a] shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"></path></svg><span class="text-[#333] text-[7.5px] font-bold">${c3_t3}</span></li>
                                               <li class="flex items-center gap-1.5"><svg class="w-3 h-3 text-[#005f8a] shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"></path></svg><span class="text-[#333] text-[7.5px] font-bold">${c3_t4}</span></li>
                                               <li class="flex items-center gap-1.5"><svg class="w-3 h-3 text-[#005f8a] shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"></path></svg><span class="text-[#333] text-[7.5px] font-bold">${c3_t5}</span></li>
-                                              <li class="flex items-center gap-1.5"><svg class="w-3 h-3 text-[#005f8a] shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zm3.857-9.809a.75.75 0 00-1.214-.882l-3.483 4.79-1.88-1.88a.75.75 0 10-1.06 1.061l2.5 2.5a.75.75 0 001.137-.089l4-5.5z" clip-rule="evenodd"></path></svg><span class="text-[#333] text-[7.5px] font-bold">${c3_t6}</span></li>
                                           </ul>
                                       </div>
                                       <div class="absolute right-0 top-0 w-[65%] h-full z-10">
@@ -648,32 +623,32 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                                   <div class="grid grid-cols-6 gap-4 text-center">
                                       <div class="flex flex-col items-center">
                                           ${svgExperiencia}
-                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-1">${bot_t1}</h3>
+                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-[7px]">${bot_t1}</h3>
                                           <p class="text-[#444] text-[6px] leading-tight font-medium">${bot_d1}</p>
                                       </div>
                                       <div class="flex flex-col items-center">
                                           ${svgEspecialistas}
-                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-1">${bot_t2}</h3>
+                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-[7px]">${bot_t2}</h3>
                                           <p class="text-[#444] text-[6px] leading-tight font-medium">${bot_d2}</p>
                                       </div>
                                       <div class="flex flex-col items-center">
                                           ${svgRespuesta}
-                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-1">${bot_t3}</h3>
+                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-[7px]">${bot_t3}</h3>
                                           <p class="text-[#444] text-[6px] leading-tight font-medium">${bot_d3}</p>
                                       </div>
                                       <div class="flex flex-col items-center">
                                           ${svgTecnologia}
-                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-1">${bot_t4}</h3>
+                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-[7px]">${bot_t4}</h3>
                                           <p class="text-[#444] text-[6px] leading-tight font-medium">${bot_d4}</p>
                                       </div>
                                       <div class="flex flex-col items-center">
                                           ${svgConfianza}
-                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-1">${bot_t5}</h3>
+                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-[7px]">${bot_t5}</h3>
                                           <p class="text-[#444] text-[6px] leading-tight font-medium">${bot_d5}</p>
                                       </div>
                                       <div class="flex flex-col items-center">
                                           ${svgCercania}
-                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-1">${bot_t6}</h3>
+                                          <h3 class="text-[#005a8c] font-bold text-[7.5px] uppercase leading-tight mb-[7px]">${bot_t6}</h3>
                                           <p class="text-[#444] text-[6px] leading-tight font-medium">${bot_d6}</p>
                                       </div>
                                   </div>
@@ -700,7 +675,7 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
                           </div>
                           <div class="h-9 w-[1px] bg-white/40 mx-3 flex-shrink-0"></div>
                           <div class="flex flex-col items-center justify-center flex-1 pl-1 gap-1.5">
-                              <img src="${logoFooterBase64}" alt="Logo Footer" class="w-[145px] h-auto">
+                              <img src="${logoFooterBase64}" alt="Logo Footer" class="w-[145px] brightness-0 invert h-auto">
                               <div class="flex items-center gap-1 text-[7.5px] font-medium tracking-[0.3px] text-white">
                                   <span>TECNOLOGÍA</span>
                                   <span class="text-white/40 font-light text-[6px]">|</span>
@@ -721,7 +696,7 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
           await page.setContent(templateHTML, { waitUntil: 'load', timeout: 60000 });
           await new Promise(resolve => setTimeout(resolve, 4000));
           
-          const nombreArchivo = `${titulo2.replace(/\s+/g, '_')}_${Date.now()}`;
+          const nombreArchivo = `${titulo2.trim().replace(/\s+/g, '_')}_${Date.now()}`;
 
           await page.screenshot({ 
             path: path.join(dirPng, `${nombreArchivo}.png`), 
@@ -745,6 +720,8 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
         }
 
         await browser.close();
+        
+        // Limpieza de archivos temporales
         if (fs.existsSync(csvFile.path)) fs.unlinkSync(csvFile.path);
         uploadedImages.forEach(img => {
           if (fs.existsSync(img.path)) fs.unlinkSync(img.path);
@@ -762,4 +739,6 @@ app.post('/upload', upload.fields([{ name: 'csvFile', maxCount: 1 }, { name: 'im
     });
 });
 
-app.listen(36000, () => {});
+app.listen(36000, () => {
+    console.log('Servidor iniciado en puerto 36000');
+});
